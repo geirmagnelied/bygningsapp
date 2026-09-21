@@ -3,6 +3,7 @@ import { useProject } from '../../contexts/ProjectContext'
 import ChannelFeed from './ChannelFeed'
 import UpcomingMaintenance from './UpcomingMaintenance'
 import ErrorReportButton from './ErrorReportButton'
+import NoActiveProperty from '../shared/NoActiveProperty'
 
 export default function Dashboard() {
   const { activeProperty, loading } = useProject()
@@ -13,11 +14,7 @@ export default function Dashboard() {
   }
 
   if (!activeProperty) {
-    return (
-      <div className="p-4 text-sm text-gray-500">
-        Du har ingen aktiv leilegheit enno. Ta kontakt med huseigar.
-      </div>
-    )
+    return <NoActiveProperty />
   }
 
   return (

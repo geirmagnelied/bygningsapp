@@ -5,10 +5,11 @@ import { useProject } from '../../contexts/ProjectContext'
 import MaintenancePlanList from './MaintenancePlanList'
 import MaintenancePlanForm from './MaintenancePlanForm'
 import MaintenanceLogForm from './MaintenanceLogForm'
+import NoActiveProperty from '../shared/NoActiveProperty'
 
 export default function MaintenanceTab() {
   const { isAdmin } = useAuth()
-  const { activePropertyId } = useProject()
+  const { activePropertyId, activeProperty, loading: projectLoading } = useProject()
   const [plans, setPlans] = useState([])
   const [loading, setLoading] = useState(true)
   const [editingPlan, setEditingPlan] = useState(null)
@@ -30,6 +31,9 @@ export default function MaintenanceTab() {
   useEffect(() => {
     load()
   }, [activePropertyId])
+
+  if (projectLoading) return <div className="p-4 text-sm text-gray-400">Lastar …</div>
+  if (!activeProperty) return <NoActiveProperty />
 
   return (
     <div className="mx-auto max-w-2xl">

@@ -4,10 +4,11 @@ import { useAuth } from '../../contexts/AuthContext'
 import { useProject } from '../../contexts/ProjectContext'
 import FdvCategoryList from './FdvCategoryList'
 import FdvItemForm from './FdvItemForm'
+import NoActiveProperty from '../shared/NoActiveProperty'
 
 export default function DocumentsTab() {
   const { isAdmin } = useAuth()
-  const { activePropertyId, activeProjectId } = useProject()
+  const { activePropertyId, activeProjectId, activeProperty, loading: projectLoading } = useProject()
   const [categories, setCategories] = useState([])
   const [items, setItems] = useState([])
   const [loading, setLoading] = useState(true)
@@ -36,6 +37,9 @@ export default function DocumentsTab() {
   }, [activePropertyId, activeProjectId])
 
   const formOpen = editingItem !== null || addingCategoryId !== null
+
+  if (projectLoading) return <div className="p-4 text-sm text-gray-400">Lastar …</div>
+  if (!activeProperty) return <NoActiveProperty />
 
   return (
     <div className="mx-auto max-w-2xl">

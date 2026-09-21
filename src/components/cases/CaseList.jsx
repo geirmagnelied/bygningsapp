@@ -3,9 +3,10 @@ import { useNavigate } from 'react-router-dom'
 import { supabase } from '../../lib/supabase'
 import { useProject } from '../../contexts/ProjectContext'
 import StatusBadge from '../shared/StatusBadge'
+import NoActiveProperty from '../shared/NoActiveProperty'
 
 export default function CaseList() {
-  const { activePropertyId } = useProject()
+  const { activePropertyId, activeProperty, loading: projectLoading } = useProject()
   const navigate = useNavigate()
   const [cases, setCases] = useState([])
   const [loading, setLoading] = useState(true)
@@ -26,6 +27,9 @@ export default function CaseList() {
 
     load()
   }, [activePropertyId])
+
+  if (projectLoading) return <div className="p-4 text-sm text-gray-400">Lastar …</div>
+  if (!activeProperty) return <NoActiveProperty />
 
   return (
     <div className="mx-auto max-w-2xl">
