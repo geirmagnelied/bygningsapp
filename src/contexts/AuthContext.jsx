@@ -8,22 +8,40 @@ export function AuthProvider({ children }) {
   const [profile, setProfile] = useState(null)
   const [loading, setLoading] = useState(true)
 
-  async function loadProfile(userId) {
-    const { data } = await supabase.from('bg_users').select('*').eq('id', userId).maybeSingle()
-    setProfile(data)
+  async function loadProfile(user) {
+    const { data } = await supabase.from('bg_users').select('*').eq('id', user.id).maybeSingle()
+    if (data) {
+      setProfile(data)
+      return
+    }
+
+    // Fyrste gong ein sesjon finst for denne brukaren (t.d. rett etter registrering,
+    // eller etter stadfesta e-post viss "Confirm email" er på): profilrada kunne ikkje
+    // opprettast under signUp (ingen aktiv sesjon = RLS avviste innsettinga). Rett opp her.
+    const { data: created } = await supabase
+      .from('bg_users')
+      .insert({
+        id: user.id,
+        email: user.email,
+        name: user.user_metadata?.name || user.email.split('@')[0],
+        role: 'tenant',
+      })
+      .select()
+      .maybeSingle()
+    setProfile(created ?? null)
   }
 
   useEffect(() => {
     supabase.auth.getSession().then(async ({ data: { session } }) => {
       setSession(session)
-      if (session?.user) await loadProfile(session.user.id)
+      if (session?.user) await loadProfile(session.user)
       setLoading(false)
     })
 
     const { data: listener } = supabase.auth.onAuthStateChange(async (_event, session) => {
       setSession(session)
       if (session?.user) {
-        await loadProfile(session.user.id)
+        await loadProfile(session.user)
       } else {
         setProfile(null)
       }
@@ -38,17 +56,15 @@ export function AuthProvider({ children }) {
   }
 
   async function signUp(email, password, name) {
-    const { data, error } = await supabase.auth.signUp({ email, password })
+    const { data, error } = await supabase.auth.signUp({ email, password, options: { data: { name } } })
     if (error) return { error }
 
-    if (data.user) {
-      const { error: profileError } = await supabase
-        .from('bg_users')
-        .insert({ id: data.user.id, email, name, role: 'tenant' })
-      if (profileError) return { error: profileError }
-      await loadProfile(data.user.id)
-    }
-    return { error: null }
+    // Viss Supabase-prosjektet krev e-poststadfesting, finst det ingen aktiv sesjon
+    // enno (data.session er null), og profilrada vert oppretta fyrste gong brukaren
+    // faktisk loggar inn (sjå loadProfile). Elles hentar/opprettar vi profilen med ein gong.
+    if (data.session?.user) await loadProfile(data.session.user)
+
+    return { error: null, needsEmailConfirmation: !data.session }
   }
 
   async function signOut() {
@@ -64,7 +80,7 @@ export function AuthProvider({ children }) {
     signIn,
     signUp,
     signOut,
-    refreshProfile: () => session?.user && loadProfile(session.user.id),
+    refreshProfile: () => session?.user && loadProfile(session.user),
   }
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>

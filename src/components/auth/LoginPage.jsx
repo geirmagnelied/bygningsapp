@@ -8,16 +8,27 @@ export default function LoginPage() {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [error, setError] = useState('')
+  const [info, setInfo] = useState('')
   const [submitting, setSubmitting] = useState(false)
 
   async function handleSubmit(e) {
     e.preventDefault()
     setError('')
+    setInfo('')
     setSubmitting(true)
 
-    const { error } = mode === 'login' ? await signIn(email, password) : await signUp(email, password, name)
-
-    if (error) setError(feilmelding(error))
+    if (mode === 'login') {
+      const { error } = await signIn(email, password)
+      if (error) setError(feilmelding(error))
+    } else {
+      const { error, needsEmailConfirmation } = await signUp(email, password, name)
+      if (error) {
+        setError(feilmelding(error))
+      } else if (needsEmailConfirmation) {
+        setInfo('Konto oppretta! Sjekk e-posten din og stadfest kontoen før du kan logga inn.')
+        setMode('login')
+      }
+    }
     setSubmitting(false)
   }
 
@@ -83,6 +94,7 @@ export default function LoginPage() {
             />
           </div>
 
+          {info && <p className="text-sm text-brand-600">{info}</p>}
           {error && <p className="text-sm text-status-open">{error}</p>}
 
           <button
@@ -99,6 +111,7 @@ export default function LoginPage() {
           onClick={() => {
             setMode(mode === 'login' ? 'signup' : 'login')
             setError('')
+            setInfo('')
           }}
           className="mt-4 w-full text-center text-sm text-brand-600 hover:underline"
         >
