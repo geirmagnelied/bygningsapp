@@ -228,6 +228,9 @@ DROP POLICY IF EXISTS bg_users_self_read ON bg_users;
 CREATE POLICY bg_users_self_read ON bg_users FOR SELECT USING (id = auth.uid());
 DROP POLICY IF EXISTS bg_users_self_update ON bg_users;
 CREATE POLICY bg_users_self_update ON bg_users FOR UPDATE USING (id = auth.uid());
+-- Lèt ein fersk auth-brukar oppretta si eiga bg_users-rad ved sjølvregistrering
+DROP POLICY IF EXISTS bg_users_self_insert ON bg_users;
+CREATE POLICY bg_users_self_insert ON bg_users FOR INSERT WITH CHECK (id = auth.uid());
 
 DROP POLICY IF EXISTS bg_leases_admin_all ON bg_leases;
 CREATE POLICY bg_leases_admin_all ON bg_leases FOR ALL USING (bg_is_admin());
