@@ -1,3 +1,72 @@
+import { useEffect, useState } from 'react'
+import { supabase } from '../../lib/supabase'
+import { useAuth } from '../../contexts/AuthContext'
+import { useProject } from '../../contexts/ProjectContext'
+import FdvCategoryList from './FdvCategoryList'
+import FdvItemForm from './FdvItemForm'
+
 export default function DocumentsTab() {
-  return <div className="p-4">Dokument</div>
+  const { isAdmin } = useAuth()
+  const { activePropertyId, activeProjectId } = useProject()
+  const [categories, setCategories] = useState([])
+  const [items, setItems] = useState([])
+  const [loading, setLoading] = useState(true)
+  const [editingItem, setEditingItem] = useState(null)
+  const [addingCategoryId, setAddingCategoryId] = useState(null)
+
+  async function load() {
+    if (!activePropertyId || !activeProjectId) return
+    setLoading(true)
+
+    const [{ data: cats }, { data: fdvItems }] = await Promise.all([
+      supabase.from('bg_fdv_categories').select('*').order('sort_order'),
+      supabase
+        .from('bg_fdv_items')
+        .select('*')
+        .or(`property_id.eq.${activePropertyId},and(property_id.is.null,project_id.eq.${activeProjectId})`),
+    ])
+
+    setCategories(cats ?? [])
+    setItems(fdvItems ?? [])
+    setLoading(false)
+  }
+
+  useEffect(() => {
+    load()
+  }, [activePropertyId, activeProjectId])
+
+  const formOpen = editingItem !== null || addingCategoryId !== null
+
+  return (
+    <div className="mx-auto max-w-2xl">
+      <div className="px-4 pt-4">
+        <h1 className="text-xl font-semibold text-gray-900">Dokument (FDV)</h1>
+      </div>
+
+      {loading ? (
+        <p className="p-4 text-sm text-gray-400">Lastar …</p>
+      ) : (
+        <FdvCategoryList
+          categories={categories}
+          items={items}
+          isAdmin={isAdmin}
+          onEdit={setEditingItem}
+          onAdd={setAddingCategoryId}
+        />
+      )}
+
+      {formOpen && (
+        <FdvItemForm
+          item={editingItem}
+          categories={categories}
+          defaultCategoryId={addingCategoryId}
+          onClose={() => {
+            setEditingItem(null)
+            setAddingCategoryId(null)
+          }}
+          onSaved={load}
+        />
+      )}
+    </div>
+  )
 }
