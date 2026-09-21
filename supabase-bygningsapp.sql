@@ -261,6 +261,9 @@ DROP POLICY IF EXISTS bg_maint_plans_admin_all ON bg_maintenance_plans;
 CREATE POLICY bg_maint_plans_admin_all ON bg_maintenance_plans FOR ALL USING (bg_is_admin());
 DROP POLICY IF EXISTS bg_maint_plans_tenant_read ON bg_maintenance_plans;
 CREATE POLICY bg_maint_plans_tenant_read ON bg_maintenance_plans FOR SELECT USING (bg_has_active_lease(property_id));
+-- Lèt leigebuar oppdatera last_completed_date/next_due_date når dei loggar utført vedlikehald
+DROP POLICY IF EXISTS bg_maint_plans_tenant_update ON bg_maintenance_plans;
+CREATE POLICY bg_maint_plans_tenant_update ON bg_maintenance_plans FOR UPDATE USING (bg_has_active_lease(property_id));
 
 DROP POLICY IF EXISTS bg_maint_logs_admin_all ON bg_maintenance_logs;
 CREATE POLICY bg_maint_logs_admin_all ON bg_maintenance_logs FOR ALL USING (bg_is_admin());
