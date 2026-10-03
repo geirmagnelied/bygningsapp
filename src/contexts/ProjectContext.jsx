@@ -25,12 +25,11 @@ export function ProjectProvider({ children }) {
       } else {
         const { data } = await supabase
           .from('bg_leases')
-          .select(
-            'property:bg_properties(id, name, unit_number, project:bg_projects(id, name, address)), tenant:bg_tenants!inner(user_id)',
-          )
-          .eq('tenant.user_id', user.id)
+          .select('property:bg_properties(id, name, unit_number, project:bg_projects(id, name, address))')
           .eq('is_active', true)
-        const props = (data ?? []).map((l) => l.property).filter(Boolean)
+        // RLS gjev leigebuaren berre leigeforholda han sjølv er knytt til.
+        const unique = new Map((data ?? []).map((l) => l.property).filter(Boolean).map((p) => [p.id, p]))
+        const props = [...unique.values()]
         setProperties(props)
         setActivePropertyId((prev) => prev ?? props[0]?.id ?? null)
       }

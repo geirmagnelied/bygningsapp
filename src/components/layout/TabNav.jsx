@@ -3,6 +3,7 @@ import { useAuth } from '../../contexts/AuthContext'
 
 const tabs = [
   { to: '/', label: 'Dashbord', icon: '🏠', end: true },
+  { to: '/leigeforhold', label: 'Leigeforhold', icon: '📑' },
   { to: '/vedlikehald', label: 'Vedlikehald', icon: '🔧' },
   { to: '/dokument', label: 'Dokument', icon: '📄' },
   { to: '/innstillingar', label: 'Innstillingar', icon: '⚙️' },
@@ -20,7 +21,7 @@ export default function TabNav() {
           to={tab.to}
           end={tab.end}
           className={({ isActive }) =>
-            `flex flex-1 flex-col items-center gap-0.5 py-2 text-xs font-medium md:flex-none md:flex-row md:gap-2 md:px-5 md:py-3 md:text-sm ${
+            `flex min-w-0 flex-1 flex-col items-center gap-0.5 py-2 text-[10px] font-medium md:flex-none md:flex-row md:gap-2 md:px-5 md:py-3 md:text-sm ${
               isActive ? 'text-brand-600' : 'text-gray-500'
             }`
           }

@@ -59,22 +59,61 @@ CREATE TABLE IF NOT EXISTS bg_tenants (
 );
 CREATE UNIQUE INDEX IF NOT EXISTS bg_tenants_email_key ON bg_tenants (lower(email));
 
--- Leigeforhold — koplar leigebuar til leilegheit i ein periode
+-- Globalt løpenummer for leigeforhold (uavhengig av leilegheit). Vist som LF-001 i appen.
+CREATE SEQUENCE IF NOT EXISTS bg_lease_number_seq START 1;
+
+-- Leigeforhold — avtale for ei leilegheit i ein periode
 CREATE TABLE IF NOT EXISTS bg_leases (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  lease_number INT NOT NULL DEFAULT nextval('bg_lease_number_seq'),
   property_id UUID REFERENCES bg_properties(id) ON DELETE CASCADE,
-  tenant_contact_id UUID REFERENCES bg_tenants(id) ON DELETE CASCADE,
   start_date DATE NOT NULL,
   end_date DATE,
+  monthly_rent NUMERIC(10,2),
+  deposit NUMERIC(10,2),
+  notes TEXT,
   is_active BOOLEAN DEFAULT true,
   archived_at TIMESTAMPTZ,
   created_at TIMESTAMPTZ DEFAULT now(),
   updated_at TIMESTAMPTZ DEFAULT now()
 );
+CREATE UNIQUE INDEX IF NOT EXISTS bg_leases_lease_number_key ON bg_leases (lease_number);
 
--- Oppgradering: leigeforhold peikte tidlegare rett på bg_users via tenant_id
-ALTER TABLE bg_leases ADD COLUMN IF NOT EXISTS tenant_contact_id UUID REFERENCES bg_tenants(id) ON DELETE CASCADE;
+-- Personar (kontraktspartar/kontaktpersonar) på eit leigeforhold
+CREATE TABLE IF NOT EXISTS bg_lease_persons (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  lease_id UUID NOT NULL REFERENCES bg_leases(id) ON DELETE CASCADE,
+  tenant_id UUID NOT NULL REFERENCES bg_tenants(id) ON DELETE CASCADE,
+  role TEXT NOT NULL DEFAULT 'kontraktspart', -- kontraktspart | kontaktperson
+  created_at TIMESTAMPTZ DEFAULT now(),
+  UNIQUE (lease_id, tenant_id)
+);
+
+-- Dokument (t.d. signert kontrakt); filene ligg i den private bucketen bygningsapp-private
+CREATE TABLE IF NOT EXISTS bg_lease_documents (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  lease_id UUID NOT NULL REFERENCES bg_leases(id) ON DELETE CASCADE,
+  title TEXT NOT NULL,
+  file_path TEXT NOT NULL,
+  uploaded_by UUID REFERENCES bg_users(id),
+  created_at TIMESTAMPTZ DEFAULT now()
+);
+
+-- Oppgradering frå eldre versjonar av skjemaet (ein leigebuar per leigeforhold, ingen løpenummer)
+ALTER TABLE bg_leases ADD COLUMN IF NOT EXISTS lease_number INT DEFAULT nextval('bg_lease_number_seq');
+ALTER TABLE bg_leases ALTER COLUMN lease_number SET NOT NULL;
+ALTER TABLE bg_leases ADD COLUMN IF NOT EXISTS monthly_rent NUMERIC(10,2);
+ALTER TABLE bg_leases ADD COLUMN IF NOT EXISTS deposit NUMERIC(10,2);
+ALTER TABLE bg_leases ADD COLUMN IF NOT EXISTS notes TEXT;
+DO $$ BEGIN
+  IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'bg_leases' AND column_name = 'tenant_contact_id') THEN
+    INSERT INTO bg_lease_persons (lease_id, tenant_id)
+      SELECT id, tenant_contact_id FROM bg_leases WHERE tenant_contact_id IS NOT NULL
+      ON CONFLICT DO NOTHING;
+  END IF;
+END $$;
 DROP POLICY IF EXISTS bg_leases_tenant_read ON bg_leases;
+ALTER TABLE bg_leases DROP COLUMN IF EXISTS tenant_contact_id;
 ALTER TABLE bg_leases DROP COLUMN IF EXISTS tenant_id;
 
 -- Arkiv for avslutta leigeforhold (snapshot av data)
@@ -217,6 +256,8 @@ ALTER TABLE bg_properties ENABLE ROW LEVEL SECURITY;
 ALTER TABLE bg_users ENABLE ROW LEVEL SECURITY;
 ALTER TABLE bg_leases ENABLE ROW LEVEL SECURITY;
 ALTER TABLE bg_tenants ENABLE ROW LEVEL SECURITY;
+ALTER TABLE bg_lease_persons ENABLE ROW LEVEL SECURITY;
+ALTER TABLE bg_lease_documents ENABLE ROW LEVEL SECURITY;
 ALTER TABLE bg_tenant_history ENABLE ROW LEVEL SECURITY;
 ALTER TABLE bg_fdv_categories ENABLE ROW LEVEL SECURITY;
 ALTER TABLE bg_fdv_items ENABLE ROW LEVEL SECURITY;
@@ -237,10 +278,37 @@ $$ LANGUAGE sql SECURITY DEFINER STABLE;
 CREATE OR REPLACE FUNCTION bg_has_active_lease(pid UUID) RETURNS BOOLEAN AS $$
   SELECT EXISTS (
     SELECT 1 FROM bg_leases l
-    JOIN bg_tenants t ON t.id = l.tenant_contact_id
+    JOIN bg_lease_persons lp ON lp.lease_id = l.id
+    JOIN bg_tenants t ON t.id = lp.tenant_id
     WHERE l.property_id = pid AND l.is_active = true AND t.user_id = auth.uid()
   );
-$$ LANGUAGE sql SECURITY DEFINER STABLE;
+$$ LANGUAGE sql SECURITY DEFINER STABLE SET search_path = public;
+
+-- Har innlogga brukar tilgang til dette (aktive) leigeforholdet?
+CREATE OR REPLACE FUNCTION bg_has_lease_access(lid UUID) RETURNS BOOLEAN AS $$
+  SELECT EXISTS (
+    SELECT 1 FROM bg_leases l
+    JOIN bg_lease_persons lp ON lp.lease_id = l.id
+    JOIN bg_tenants t ON t.id = lp.tenant_id
+    WHERE l.id = lid AND l.is_active = true AND t.user_id = auth.uid()
+  );
+$$ LANGUAGE sql SECURITY DEFINER STABLE SET search_path = public;
+
+-- Kan innlogga brukar sjå denne leigebuaren (sjølv eller på same leigeforhold)?
+CREATE OR REPLACE FUNCTION bg_tenant_visible(tid UUID) RETURNS BOOLEAN AS $$
+  SELECT EXISTS (
+    SELECT 1 FROM bg_lease_persons lp WHERE lp.tenant_id = tid AND bg_has_lease_access(lp.lease_id)
+  );
+$$ LANGUAGE sql SECURITY DEFINER STABLE SET search_path = public;
+
+-- Fil-tilgang i privat bucket (sti: <lease_id>/<fil>): admin, eller brukar på leigeforholdet
+CREATE OR REPLACE FUNCTION bg_can_read_lease_file(p TEXT) RETURNS BOOLEAN AS $$
+  SELECT bg_is_admin() OR CASE
+    WHEN split_part(p, '/', 1) ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
+    THEN bg_has_lease_access(split_part(p, '/', 1)::uuid)
+    ELSE false
+  END;
+$$ LANGUAGE sql SECURITY DEFINER STABLE SET search_path = public;
 
 -- Koplar leigebuarar (registrert av admin) til innloggingskontoar med same, stadfesta e-post.
 -- Vanleg brukar kan berre kopla seg sjølv; admin kan kopla alle.
@@ -282,16 +350,37 @@ CREATE POLICY bg_users_self_insert ON bg_users FOR INSERT WITH CHECK (id = auth.
 DROP POLICY IF EXISTS bg_leases_admin_all ON bg_leases;
 CREATE POLICY bg_leases_admin_all ON bg_leases FOR ALL USING (bg_is_admin());
 DROP POLICY IF EXISTS bg_leases_tenant_read ON bg_leases;
-CREATE POLICY bg_leases_tenant_read ON bg_leases FOR SELECT USING (
-  is_active = true AND EXISTS (
-    SELECT 1 FROM bg_tenants t WHERE t.id = bg_leases.tenant_contact_id AND t.user_id = auth.uid()
-  )
-);
+CREATE POLICY bg_leases_tenant_read ON bg_leases FOR SELECT USING (is_active = true AND bg_has_lease_access(id));
+
+DROP POLICY IF EXISTS bg_lease_persons_admin_all ON bg_lease_persons;
+CREATE POLICY bg_lease_persons_admin_all ON bg_lease_persons FOR ALL USING (bg_is_admin());
+DROP POLICY IF EXISTS bg_lease_persons_tenant_read ON bg_lease_persons;
+CREATE POLICY bg_lease_persons_tenant_read ON bg_lease_persons FOR SELECT USING (bg_has_lease_access(lease_id));
+
+DROP POLICY IF EXISTS bg_lease_documents_admin_all ON bg_lease_documents;
+CREATE POLICY bg_lease_documents_admin_all ON bg_lease_documents FOR ALL USING (bg_is_admin());
+DROP POLICY IF EXISTS bg_lease_documents_tenant_read ON bg_lease_documents;
+CREATE POLICY bg_lease_documents_tenant_read ON bg_lease_documents FOR SELECT USING (bg_has_lease_access(lease_id));
 
 DROP POLICY IF EXISTS bg_tenants_admin_all ON bg_tenants;
 CREATE POLICY bg_tenants_admin_all ON bg_tenants FOR ALL USING (bg_is_admin());
 DROP POLICY IF EXISTS bg_tenants_self_read ON bg_tenants;
 CREATE POLICY bg_tenants_self_read ON bg_tenants FOR SELECT USING (user_id = auth.uid());
+DROP POLICY IF EXISTS bg_tenants_housemates_read ON bg_tenants;
+CREATE POLICY bg_tenants_housemates_read ON bg_tenants FOR SELECT USING (bg_tenant_visible(id));
+
+-- Privat bucket for kontraktar (ikkje offentleg - tilgang via signerte lenkjer)
+INSERT INTO storage.buckets (id, name, public) VALUES ('bygningsapp-private', 'bygningsapp-private', false)
+  ON CONFLICT (id) DO NOTHING;
+DROP POLICY IF EXISTS "bg private read" ON storage.objects;
+CREATE POLICY "bg private read" ON storage.objects FOR SELECT TO authenticated
+  USING (bucket_id = 'bygningsapp-private' AND bg_can_read_lease_file(name));
+DROP POLICY IF EXISTS "bg private admin insert" ON storage.objects;
+CREATE POLICY "bg private admin insert" ON storage.objects FOR INSERT TO authenticated
+  WITH CHECK (bucket_id = 'bygningsapp-private' AND bg_is_admin());
+DROP POLICY IF EXISTS "bg private admin delete" ON storage.objects;
+CREATE POLICY "bg private admin delete" ON storage.objects FOR DELETE TO authenticated
+  USING (bucket_id = 'bygningsapp-private' AND bg_is_admin());
 
 DROP POLICY IF EXISTS bg_tenant_history_admin_all ON bg_tenant_history;
 CREATE POLICY bg_tenant_history_admin_all ON bg_tenant_history FOR ALL USING (bg_is_admin());

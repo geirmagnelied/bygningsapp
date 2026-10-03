@@ -1,9 +1,11 @@
 import { useEffect, useState } from 'react'
+import { Link } from 'react-router-dom'
 import { supabase } from '../../lib/supabase'
+import { archiveLease, formatDate, formatLeaseNumber, fullName, inviteTenant, ROLE_LABELS } from '../../lib/leases'
 import AdminNav from './AdminNav'
 import EigedomForm from './EigedomForm'
 import PropertyForm from './PropertyForm'
-import LeaseForm from './LeaseForm'
+import PersonForm from './PersonForm'
 import TenantEditForm from './TenantEditForm'
 
 const TENANT_FIELDS = 'id, last_name, first_name, email, phone, user_id'
@@ -13,21 +15,25 @@ export default function EigedomAdmin() {
   const [loading, setLoading] = useState(true)
   const [eigedomForm, setEigedomForm] = useState(null) // { eigedom? }
   const [propertyForm, setPropertyForm] = useState(null) // { eigedom, property? }
-  const [leaseFormFor, setLeaseFormFor] = useState(null)
+  const [personFormFor, setPersonFormFor] = useState(null)
   const [editingTenant, setEditingTenant] = useState(null)
+  const [message, setMessage] = useState('')
 
   async function load() {
     setLoading(true)
     const { data } = await supabase
       .from('bg_projects')
       .select(
-        `*, properties:bg_properties(id, name, unit_number, leases:bg_leases(id, start_date, is_active, tenant:bg_tenants(${TENANT_FIELDS})))`,
+        `*, properties:bg_properties(id, name, unit_number, leases:bg_leases(id, lease_number, property_id, start_date, end_date, is_active, persons:bg_lease_persons(id, role, tenant:bg_tenants(${TENANT_FIELDS}))))`,
       )
       .order('name')
     setEigedomar(
       (data ?? []).map((e) => ({
         ...e,
-        properties: e.properties.map((p) => ({ ...p, leases: p.leases.filter((l) => l.is_active) })),
+        properties: e.properties.map((p) => ({
+          ...p,
+          leases: p.leases.filter((l) => l.is_active).sort((a, b) => a.lease_number - b.lease_number),
+        })),
       })),
     )
     setLoading(false)
@@ -37,26 +43,19 @@ export default function EigedomAdmin() {
     load()
   }, [])
 
-  async function archiveLease(lease, property) {
-    const t = lease.tenant
-    if (!confirm(`Arkivera leigeforholdet til ${t?.first_name} ${t?.last_name}?`)) return
-
-    const today = new Date().toISOString().slice(0, 10)
-    await supabase.from('bg_tenant_history').insert({
-      lease_id: lease.id,
-      property_id: property.id,
-      tenant_name: `${t?.first_name} ${t?.last_name}`,
-      tenant_email: t?.email,
-      start_date: lease.start_date,
-      end_date: today,
-      original_data: lease,
-    })
-    await supabase
-      .from('bg_leases')
-      .update({ is_active: false, archived_at: new Date().toISOString(), end_date: today })
-      .eq('id', lease.id)
-
+  async function handleArchive(lease) {
+    if (!confirm(`Arkivere ${formatLeaseNumber(lease.lease_number)}? Leigebuarane mister tilgangen til leilegheita.`)) return
+    const { error } = await archiveLease(lease, lease.persons)
+    if (error) setMessage(error.message)
     await load()
+  }
+
+  async function handleInvite(tenant) {
+    setMessage('')
+    const result = await inviteTenant(tenant)
+    if (result.ok) setMessage(`Invitasjon sendt til ${tenant.email}.`)
+    else if (result.alreadyRegistered) setMessage(`${tenant.email} har alt ein konto i appen.`)
+    else setMessage(`Klarte ikkje sende invitasjon: ${result.message}`)
   }
 
   return (
@@ -74,6 +73,8 @@ export default function EigedomAdmin() {
           + Ny eigedom
         </button>
       </div>
+
+      {message && <p className="mb-3 rounded-lg bg-brand-50 p-3 text-sm text-brand-800">{message}</p>}
 
       {loading ? (
         <p className="text-sm text-gray-400">Lastar …</p>
@@ -120,7 +121,7 @@ export default function EigedomAdmin() {
 
               {eigedom.properties.length === 0 ? (
                 <p className="mt-2 text-sm text-gray-400">
-                  Ingen leilegheiter enno. Leigebuarar vert knytte til ei leilegheit, så legg til minst éi.
+                  Ingen leilegheiter enno. Leigeforhold knyter seg til ei leilegheit, så legg til minst éi.
                 </p>
               ) : (
                 <ul className="mt-2 flex flex-col gap-3">
@@ -138,7 +139,7 @@ export default function EigedomAdmin() {
                           </button>
                           <button
                             type="button"
-                            onClick={() => setLeaseFormFor(property)}
+                            onClick={() => setPersonFormFor(property)}
                             className="text-xs font-medium text-brand-600 hover:underline"
                           >
                             + Legg til leigebuar
@@ -147,45 +148,81 @@ export default function EigedomAdmin() {
                       </div>
 
                       {property.leases.length === 0 ? (
-                        <p className="mt-1 text-xs text-gray-400">Ingen aktiv leigebuar.</p>
+                        <p className="mt-1 text-xs text-gray-400">Ingen aktive leigeforhold.</p>
                       ) : (
-                        <ul className="mt-2 flex flex-col gap-2">
+                        <ul className="mt-2 flex flex-col gap-3">
                           {property.leases.map((lease) => (
-                            <li key={lease.id} className="flex items-start justify-between gap-2 text-sm">
-                              <div>
-                                <p className="text-gray-800">
-                                  {lease.tenant?.first_name} {lease.tenant?.last_name}
-                                  {lease.tenant?.user_id ? (
-                                    <span className="ml-2 rounded-full bg-brand-50 px-2 py-0.5 text-xs text-brand-700">
-                                      har konto
-                                    </span>
-                                  ) : (
-                                    <span className="ml-2 rounded-full bg-gray-100 px-2 py-0.5 text-xs text-gray-500">
-                                      ikkje registrert
-                                    </span>
-                                  )}
-                                </p>
-                                <p className="text-xs text-gray-500">
-                                  {lease.tenant?.email}
-                                  {lease.tenant?.phone && ` · ${lease.tenant.phone}`}
-                                </p>
+                            <li key={lease.id} className="rounded-md border border-gray-200 bg-white p-2.5">
+                              <div className="flex items-center justify-between">
+                                <Link
+                                  to={`/leigeforhold/${lease.id}`}
+                                  className="text-sm font-semibold text-brand-700 hover:underline"
+                                >
+                                  {formatLeaseNumber(lease.lease_number)}
+                                </Link>
+                                <span className="flex gap-3 text-xs font-medium">
+                                  <Link to={`/leigeforhold/${lease.id}`} className="text-gray-500 hover:underline">
+                                    Opne
+                                  </Link>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleArchive(lease)}
+                                    className="text-status-open hover:underline"
+                                  >
+                                    Arkiver
+                                  </button>
+                                </span>
                               </div>
-                              <span className="flex shrink-0 gap-3 text-xs font-medium">
-                                <button
-                                  type="button"
-                                  onClick={() => setEditingTenant(lease.tenant)}
-                                  className="text-gray-500 hover:underline"
-                                >
-                                  Rediger
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={() => archiveLease(lease, property)}
-                                  className="text-status-open hover:underline"
-                                >
-                                  Arkiver
-                                </button>
-                              </span>
+
+                              {lease.persons.length === 0 ? (
+                                <p className="mt-1 text-xs text-gray-400">Ingen personar registrert.</p>
+                              ) : (
+                                <ul className="mt-1.5 flex flex-col gap-2">
+                                  {lease.persons.map((person) => (
+                                    <li key={person.id} className="flex items-start justify-between gap-2 text-sm">
+                                      <div>
+                                        <p className="text-gray-800">
+                                          {fullName(person.tenant)}
+                                          <span className="ml-2 text-xs text-gray-400">
+                                            {ROLE_LABELS[person.role] ?? person.role}
+                                          </span>
+                                          {person.tenant?.user_id ? (
+                                            <span className="ml-2 rounded-full bg-brand-50 px-2 py-0.5 text-xs text-brand-700">
+                                              har konto
+                                            </span>
+                                          ) : (
+                                            <span className="ml-2 rounded-full bg-gray-100 px-2 py-0.5 text-xs text-gray-500">
+                                              ikkje registrert
+                                            </span>
+                                          )}
+                                        </p>
+                                        <p className="text-xs text-gray-500">
+                                          {person.tenant?.email}
+                                          {person.tenant?.phone && ` · ${person.tenant.phone}`}
+                                        </p>
+                                      </div>
+                                      <span className="flex shrink-0 gap-3 text-xs font-medium">
+                                        {!person.tenant?.user_id && (
+                                          <button
+                                            type="button"
+                                            onClick={() => handleInvite(person.tenant)}
+                                            className="text-brand-600 hover:underline"
+                                          >
+                                            Inviter
+                                          </button>
+                                        )}
+                                        <button
+                                          type="button"
+                                          onClick={() => setEditingTenant(person.tenant)}
+                                          className="text-gray-500 hover:underline"
+                                        >
+                                          Rediger
+                                        </button>
+                                      </span>
+                                    </li>
+                                  ))}
+                                </ul>
+                              )}
                             </li>
                           ))}
                         </ul>
@@ -210,7 +247,7 @@ export default function EigedomAdmin() {
           onSaved={load}
         />
       )}
-      {leaseFormFor && <LeaseForm property={leaseFormFor} onClose={() => setLeaseFormFor(null)} onSaved={load} />}
+      {personFormFor && <PersonForm property={personFormFor} onClose={() => setPersonFormFor(null)} onSaved={load} />}
       {editingTenant && (
         <TenantEditForm tenant={editingTenant} onClose={() => setEditingTenant(null)} onSaved={load} />
       )}
@@ -225,8 +262,4 @@ function Fact({ label, value }) {
       <dd className="text-gray-800">{value || '–'}</dd>
     </div>
   )
-}
-
-function formatDate(dateStr) {
-  return new Date(dateStr).toLocaleDateString('nb-NO', { day: 'numeric', month: 'short', year: 'numeric' })
 }

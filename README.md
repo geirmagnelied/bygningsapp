@@ -38,7 +38,7 @@ Alt anna (kode, struktur, styling, logikk) er bygd ferdig av Claude Code. Desse 
      ```
    - Logg ut og inn att i appen for at rolla skal ta effekt.
 
-4. **Opprett eigedomar, leilegheiter og leigebuarar.** Logg inn som admin → fana **Admin** (opnar på **Eigedomar**) → "+ Ny eigedom" (adresse, gnr/bnr/snr, kjøpsdato, beskriving) → "+ Leilegheit" → "+ Legg til leigebuar" (namn, etternamn, e-post, telefon). Leigebuaren treng ikkje ha registrert seg først: registrerer han seg seinare i appen med same e-post, får han automatisk tilgang til leilegheita.
+4. **Opprett eigedomar, leilegheiter og leigebuarar.** Logg inn som admin → fana **Admin** (opnar på **Eigedomar**) → "+ Ny eigedom" (adresse, gnr/bnr/snr, kjøpsdato, beskriving) → "+ Leilegheit" → "+ Legg til leigebuar" (namn, etternamn, e-post, telefon). Vindauget har to knappar: **Knytt til leigeforhold** (nytt eller eksisterande, med løpenummer) og **Inviter til bygningsapp** (sender e-post med lenke der leigebuaren vel passord). Leigebuaren treng ikkje ha registrert seg først: registrerer han seg (eller godtek invitasjonen) med same e-post, får han automatisk tilgang til leilegheita. Alle leigeforhold ligg òg i hovudfana **Leigeforhold** (løpenummer LF-001, LF-002 …, unike på tvers av leilegheiter), med kontraktspartar, kontaktpersonar, tidsrom, leige og opplasting av signert kontrakt.
 
 5. **Kopla til Vercel.**
    - Nytt Vercel-prosjekt kopla til GitHub-repoet `geirmagnelied/bygningsapp`
@@ -50,6 +50,16 @@ Alt anna (kode, struktur, styling, logikk) er bygd ferdig av Claude Code. Desse 
 ## Teknisk merknad om leigebuarar
 
 Klienten har berre den offentlege anon-nøkkelen (ingen service-role-nøkkel), så admin kan ikkje oppretta innloggingskontoar for andre. Difor er leigebuarar kontaktoppføringar (`bg_tenants`) som admin legg inn, og leigeforhold peikar på dei. Når ein person registrerer seg og stadfestar e-posten, koplar databasefunksjonen `bg_link_tenants()` kontoen til oppføringa med same e-post, og leigebuaren ser då leilegheita si.
+
+## Invitasjonar på e-post
+
+Knappen «Inviter til bygningsapp» kallar Edge Function `invite-tenant` (kjelde: `supabase/functions/invite-tenant/index.ts`, alt deploya til Supabase). Ho køyrer på serveren med service-role-nøkkelen og kan berre brukast av admin. Ho sender Supabase sin innebygde invitasjons-e-post. Dette må du sjølv sjekke i Supabase-dashbordet:
+
+- **Authentication → URL Configuration:** Site URL og Redirect URLs må innehalde Vercel-adressa, elles peikar lenka i e-posten feil.
+- **Authentication → Email Templates → Invite user:** teksten er engelsk som standard, så tilpass gjerne til norsk.
+- Supabase sin innebygde e-posttenesta har låg grense for tal e-postar per time. Er det ikkje nok, set opp eigen SMTP under **Authentication → SMTP Settings**.
+
+Signerte kontraktar ligg i den **private** bucketen `bygningsapp-private` (ikkje offentleg), og vert opna via kortlevde, signerte lenkjer.
 
 ## Struktur
 
@@ -63,8 +73,9 @@ src/
     dashboard/    # ChannelFeed, UpcomingMaintenance, ErrorReportButton/-Modal
     maintenance/  # Planliste, plan-skjema, logg-skjema
     documents/    # FDV-kategoriliste og -postar med synlegskapsstyring
+    leases/       # Leigeforhold-modulen: liste, detalj, skjema, dokument
     cases/        # Saksliste og saksdetalj med meldingstråd
-    admin/        # EigedomAdmin (eigedomar først), AdminDashboard (oversikt), Eigedom-/Property-/Lease-/TenantEditForm
+    admin/        # EigedomAdmin (eigedomar først), AdminDashboard (oversikt), Eigedom-/Property-/Person-/TenantEditForm
     settings/     # SettingsTab
     shared/       # Modal, StatusBadge, NoActiveProperty
 supabase-bygningsapp.sql   # Heile databaseskjemaet (køyr manuelt, sjå over)

@@ -2,8 +2,11 @@ import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom'
 import { AuthProvider, useAuth } from './contexts/AuthContext'
 import { ProjectProvider } from './contexts/ProjectContext'
 import LoginPage from './components/auth/LoginPage'
+import SetPasswordPage from './components/auth/SetPasswordPage'
 import Layout from './components/layout/Layout'
 import Dashboard from './components/dashboard/Dashboard'
+import LeaseList from './components/leases/LeaseList'
+import LeaseDetail from './components/leases/LeaseDetail'
 import MaintenanceTab from './components/maintenance/MaintenanceTab'
 import DocumentsTab from './components/documents/DocumentsTab'
 import CaseList from './components/cases/CaseList'
@@ -13,7 +16,7 @@ import EigedomAdmin from './components/admin/EigedomAdmin'
 import SettingsTab from './components/settings/SettingsTab'
 
 function Gate() {
-  const { user, loading } = useAuth()
+  const { user, loading, needsPassword } = useAuth()
 
   if (loading) {
     return (
@@ -22,12 +25,15 @@ function Gate() {
   }
 
   if (!user) return <LoginPage />
+  if (needsPassword) return <SetPasswordPage />
 
   return (
     <ProjectProvider>
       <Routes>
         <Route element={<Layout />}>
           <Route index element={<Dashboard />} />
+          <Route path="leigeforhold" element={<LeaseList />} />
+          <Route path="leigeforhold/:leaseId" element={<LeaseDetail />} />
           <Route path="vedlikehald" element={<MaintenanceTab />} />
           <Route path="dokument" element={<DocumentsTab />} />
           <Route path="saker" element={<CaseList />} />

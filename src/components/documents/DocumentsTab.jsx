@@ -11,6 +11,7 @@ export default function DocumentsTab() {
   const { activePropertyId, activeProjectId, activeProperty, loading: projectLoading } = useProject()
   const [categories, setCategories] = useState([])
   const [items, setItems] = useState([])
+  const [leases, setLeases] = useState([])
   const [loading, setLoading] = useState(true)
   const [editingItem, setEditingItem] = useState(null)
   const [addingCategoryId, setAddingCategoryId] = useState(null)
@@ -19,8 +20,14 @@ export default function DocumentsTab() {
     if (!activePropertyId || !activeProjectId) return
     setLoading(true)
 
-    const [{ data: cats }, { data: fdvItems }] = await Promise.all([
+    const [{ data: cats }, { data: leaseRows }, { data: fdvItems }] = await Promise.all([
       supabase.from('bg_fdv_categories').select('*').order('sort_order'),
+      supabase
+        .from('bg_leases')
+        .select('id, lease_number, start_date, property:bg_properties(name)')
+        .eq('property_id', activePropertyId)
+        .eq('is_active', true)
+        .order('lease_number'),
       supabase
         .from('bg_fdv_items')
         .select('*')
@@ -28,6 +35,7 @@ export default function DocumentsTab() {
     ])
 
     setCategories(cats ?? [])
+    setLeases(leaseRows ?? [])
     setItems(fdvItems ?? [])
     setLoading(false)
   }
@@ -53,6 +61,7 @@ export default function DocumentsTab() {
         <FdvCategoryList
           categories={categories}
           items={items}
+          leases={leases}
           isAdmin={isAdmin}
           onEdit={setEditingItem}
           onAdd={setAddingCategoryId}
@@ -62,7 +71,7 @@ export default function DocumentsTab() {
       {formOpen && (
         <FdvItemForm
           item={editingItem}
-          categories={categories}
+          categories={categories.filter((c) => c.section !== 'leigeforhold')}
           defaultCategoryId={addingCategoryId}
           onClose={() => {
             setEditingItem(null)

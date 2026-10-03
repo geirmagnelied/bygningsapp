@@ -7,6 +7,8 @@ export function AuthProvider({ children }) {
   const [session, setSession] = useState(null)
   const [profile, setProfile] = useState(null)
   const [loading, setLoading] = useState(true)
+  // Lenkja i invitasjons-/passord-e-post legg type=invite|recovery i URL-en; då må brukaren velje passord.
+  const [needsPassword, setNeedsPassword] = useState(() => /type=(invite|recovery)/.test(window.location.hash))
 
   async function loadProfile(user) {
     let { data } = await supabase.from('bg_users').select('*').eq('id', user.id).maybeSingle()
@@ -41,7 +43,8 @@ export function AuthProvider({ children }) {
       setLoading(false)
     })
 
-    const { data: listener } = supabase.auth.onAuthStateChange(async (_event, session) => {
+    const { data: listener } = supabase.auth.onAuthStateChange(async (event, session) => {
+      if (event === 'PASSWORD_RECOVERY') setNeedsPassword(true)
       setSession(session)
       if (session?.user) {
         await loadProfile(session.user)
@@ -74,12 +77,23 @@ export function AuthProvider({ children }) {
     await supabase.auth.signOut()
   }
 
+  async function setPassword(password) {
+    const { error } = await supabase.auth.updateUser({ password })
+    if (!error) {
+      setNeedsPassword(false)
+      window.history.replaceState(null, '', window.location.pathname)
+    }
+    return { error }
+  }
+
   const value = {
     session,
     user: session?.user ?? null,
     profile,
     isAdmin: profile?.role === 'admin',
     loading,
+    needsPassword,
+    setPassword,
     signIn,
     signUp,
     signOut,

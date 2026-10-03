@@ -1,7 +1,9 @@
 import { useState } from 'react'
+import { Link } from 'react-router-dom'
+import { formatDate, formatLeaseNumber } from '../../lib/leases'
 import FdvItemCard from './FdvItemCard'
 
-export default function FdvCategoryList({ categories, items, isAdmin, onEdit, onAdd }) {
+export default function FdvCategoryList({ categories, items, leases, isAdmin, onEdit, onAdd }) {
   const [openKey, setOpenKey] = useState(null)
   const [openSubId, setOpenSubId] = useState(null)
 
@@ -12,7 +14,33 @@ export default function FdvCategoryList({ categories, items, isAdmin, onEdit, on
     return items.filter((i) => i.category_id === categoryId)
   }
 
+  function renderLeases() {
+    return (
+      <div className="p-3">
+        {leases.length === 0 ? (
+          <p className="py-2 text-center text-sm text-gray-400">Ingen aktive leigeforhold.</p>
+        ) : (
+          <ul className="flex flex-col gap-2">
+            {leases.map((lease) => (
+              <li key={lease.id}>
+                <Link
+                  to={`/leigeforhold/${lease.id}`}
+                  className="block rounded-xl border border-gray-200 bg-white p-4 hover:border-brand-300"
+                >
+                  <span className="text-sm font-semibold text-brand-700">{formatLeaseNumber(lease.lease_number)}</span>
+                  <span className="ml-2 font-medium text-gray-900">{lease.property?.name}</span>
+                  <span className="block text-xs text-gray-400">Frå {formatDate(lease.start_date)}</span>
+                </Link>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+    )
+  }
+
   function renderItems(category) {
+    if (category.section === 'leigeforhold') return renderLeases()
     const list = itemsOf(category.id)
     return (
       <div className="p-3">
