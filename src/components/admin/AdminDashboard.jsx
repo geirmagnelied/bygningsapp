@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
+import { useNavigate } from 'react-router-dom'
 import { supabase } from '../../lib/supabase'
 import StatusBadge from '../shared/StatusBadge'
+import AdminNav from './AdminNav'
 
 export default function AdminDashboard() {
   const navigate = useNavigate()
@@ -40,15 +41,8 @@ export default function AdminDashboard() {
 
   return (
     <div className="mx-auto flex max-w-2xl flex-col gap-4 p-4">
-      <div className="flex items-center justify-between">
-        <h1 className="text-xl font-semibold text-gray-900">Admin</h1>
-        <Link
-          to="/admin/leigebuarar"
-          className="min-h-9 rounded-lg bg-brand-500 px-3 py-1.5 text-sm font-medium text-white hover:bg-brand-600"
-        >
-          Leigebuarar
-        </Link>
-      </div>
+      <h1 className="text-xl font-semibold text-gray-900">Admin</h1>
+      <AdminNav />
 
       <div className="grid grid-cols-3 gap-3">
         <div className="rounded-xl border border-gray-200 bg-white p-3 text-center">

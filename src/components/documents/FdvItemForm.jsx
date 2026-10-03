@@ -73,7 +73,7 @@ export default function FdvItemForm({ item, categories, defaultCategoryId, onClo
           >
             {categories.map((c) => (
               <option key={c.id} value={c.id}>
-                {c.name}
+                {c.section === 'bygning' ? `Bygning › ${c.name}` : c.name}
               </option>
             ))}
           </select>

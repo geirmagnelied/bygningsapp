@@ -38,7 +38,7 @@ Alt anna (kode, struktur, styling, logikk) er bygd ferdig av Claude Code. Desse 
      ```
    - Logg ut og inn att i appen for at rolla skal ta effekt.
 
-4. **Opprett bygg og leilegheiter.** Logga inn som admin → fana **Admin** → **Leigebuarar** → "+ Nytt bygg" og "+ Leilegheit". Leigebuarar registrerer seg sjølve i appen (steg 3, utan admin-oppgraderinga), og du koplar dei til rett leilegheit med "+ Legg til leigebuar" ved å oppgje e-posten deira.
+4. **Opprett eigedomar, leilegheiter og leigebuarar.** Logg inn som admin → fana **Admin** (opnar på **Eigedomar**) → "+ Ny eigedom" (adresse, gnr/bnr/snr, kjøpsdato, beskriving) → "+ Leilegheit" → "+ Legg til leigebuar" (namn, etternamn, e-post, telefon). Leigebuaren treng ikkje ha registrert seg først: registrerer han seg seinare i appen med same e-post, får han automatisk tilgang til leilegheita.
 
 5. **Kopla til Vercel.**
    - Nytt Vercel-prosjekt kopla til GitHub-repoet `geirmagnelied/bygningsapp`
@@ -47,9 +47,9 @@ Alt anna (kode, struktur, styling, logikk) er bygd ferdig av Claude Code. Desse 
 
 6. **DNS (valfritt).** Om du ønskjer eige subdomene med det same, peik `bygningsapp.liedlab.no` til Vercel (CNAME).
 
-## Teknisk merknad om leigebuar-oppretting
+## Teknisk merknad om leigebuarar
 
-Klienten har berre den offentlege anon-nøkkelen (ingen service-role-nøkkel), så admin kan ikkje oppretta Supabase Auth-kontoar for andre direkte frå nettlesaren — det ville kapra admin sin eigen innlogga sesjon. Difor registrerer kvar leigebuar seg sjølv (same skjema som steg 3 over, utan rolle-oppgraderinga), og admin koplar dei til rett leilegheit i etterkant via **Admin → Leigebuarar**.
+Klienten har berre den offentlege anon-nøkkelen (ingen service-role-nøkkel), så admin kan ikkje oppretta innloggingskontoar for andre. Difor er leigebuarar kontaktoppføringar (`bg_tenants`) som admin legg inn, og leigeforhold peikar på dei. Når ein person registrerer seg og stadfestar e-posten, koplar databasefunksjonen `bg_link_tenants()` kontoen til oppføringa med same e-post, og leigebuaren ser då leilegheita si.
 
 ## Struktur
 
@@ -64,7 +64,7 @@ src/
     maintenance/  # Planliste, plan-skjema, logg-skjema
     documents/    # FDV-kategoriliste og -postar med synlegskapsstyring
     cases/        # Saksliste og saksdetalj med meldingstråd
-    admin/        # AdminDashboard, TenantManagement, Project-/Property-/LeaseForm
+    admin/        # EigedomAdmin (eigedomar først), AdminDashboard (oversikt), Eigedom-/Property-/Lease-/TenantEditForm
     settings/     # SettingsTab
     shared/       # Modal, StatusBadge, NoActiveProperty
 supabase-bygningsapp.sql   # Heile databaseskjemaet (køyr manuelt, sjå over)

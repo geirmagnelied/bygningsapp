@@ -9,26 +9,29 @@ export function AuthProvider({ children }) {
   const [loading, setLoading] = useState(true)
 
   async function loadProfile(user) {
-    const { data } = await supabase.from('bg_users').select('*').eq('id', user.id).maybeSingle()
-    if (data) {
-      setProfile(data)
-      return
+    let { data } = await supabase.from('bg_users').select('*').eq('id', user.id).maybeSingle()
+
+    if (!data) {
+      // Fyrste gong ein sesjon finst for denne brukaren (t.d. rett etter registrering,
+      // eller etter stadfesta e-post viss "Confirm email" er på): profilrada kunne ikkje
+      // opprettast under signUp (ingen aktiv sesjon = RLS avviste innsettinga). Rett opp her.
+      const { data: created } = await supabase
+        .from('bg_users')
+        .insert({
+          id: user.id,
+          email: user.email,
+          name: user.user_metadata?.name || user.email.split('@')[0],
+          role: 'tenant',
+        })
+        .select()
+        .maybeSingle()
+      data = created
     }
 
-    // Fyrste gong ein sesjon finst for denne brukaren (t.d. rett etter registrering,
-    // eller etter stadfesta e-post viss "Confirm email" er på): profilrada kunne ikkje
-    // opprettast under signUp (ingen aktiv sesjon = RLS avviste innsettinga). Rett opp her.
-    const { data: created } = await supabase
-      .from('bg_users')
-      .insert({
-        id: user.id,
-        email: user.email,
-        name: user.user_metadata?.name || user.email.split('@')[0],
-        role: 'tenant',
-      })
-      .select()
-      .maybeSingle()
-    setProfile(created ?? null)
+    // Kopla innloggingskontoen til leigebuaren admin har registrert med same e-post.
+    if (data) await supabase.rpc('bg_link_tenants')
+
+    setProfile(data ?? null)
   }
 
   useEffect(() => {

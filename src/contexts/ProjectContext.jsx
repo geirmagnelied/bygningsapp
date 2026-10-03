@@ -25,8 +25,10 @@ export function ProjectProvider({ children }) {
       } else {
         const { data } = await supabase
           .from('bg_leases')
-          .select('property:bg_properties(id, name, unit_number, project:bg_projects(id, name, address))')
-          .eq('tenant_id', user.id)
+          .select(
+            'property:bg_properties(id, name, unit_number, project:bg_projects(id, name, address)), tenant:bg_tenants!inner(user_id)',
+          )
+          .eq('tenant.user_id', user.id)
           .eq('is_active', true)
         const props = (data ?? []).map((l) => l.property).filter(Boolean)
         setProperties(props)

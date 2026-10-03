@@ -10,12 +10,20 @@ CREATE TABLE IF NOT EXISTS bg_projects (
   address TEXT NOT NULL,
   gardsnr TEXT,
   bruksnr TEXT,
+  seksjonsnr TEXT,
+  purchase_date DATE,
+  description TEXT,
   image_url TEXT,
   created_at TIMESTAMPTZ DEFAULT now(),
   updated_at TIMESTAMPTZ DEFAULT now()
 );
 
--- Leilegheiter/einingar under eit prosjekt
+-- Oppgradering for databasar som alt har bg_projects utan dei nye felta
+ALTER TABLE bg_projects ADD COLUMN IF NOT EXISTS seksjonsnr TEXT;
+ALTER TABLE bg_projects ADD COLUMN IF NOT EXISTS purchase_date DATE;
+ALTER TABLE bg_projects ADD COLUMN IF NOT EXISTS description TEXT;
+
+-- Leilegheiter/einingar under eit prosjekt (eigedom)
 CREATE TABLE IF NOT EXISTS bg_properties (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   project_id UUID REFERENCES bg_projects(id) ON DELETE CASCADE,
@@ -37,11 +45,25 @@ CREATE TABLE IF NOT EXISTS bg_users (
   updated_at TIMESTAMPTZ DEFAULT now()
 );
 
--- Leigeforhold — koplar brukar til leilegheit i ein periode
+-- Leigebuarar (kontaktinfo registrert av admin). user_id vert kopla til innloggingskontoen
+-- automatisk (bg_link_tenants) når leigebuaren registrerer seg med same e-post.
+CREATE TABLE IF NOT EXISTS bg_tenants (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  last_name TEXT NOT NULL,
+  first_name TEXT NOT NULL,
+  email TEXT NOT NULL,
+  phone TEXT,
+  user_id UUID REFERENCES bg_users(id) ON DELETE SET NULL,
+  created_at TIMESTAMPTZ DEFAULT now(),
+  updated_at TIMESTAMPTZ DEFAULT now()
+);
+CREATE UNIQUE INDEX IF NOT EXISTS bg_tenants_email_key ON bg_tenants (lower(email));
+
+-- Leigeforhold — koplar leigebuar til leilegheit i ein periode
 CREATE TABLE IF NOT EXISTS bg_leases (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   property_id UUID REFERENCES bg_properties(id) ON DELETE CASCADE,
-  tenant_id UUID REFERENCES bg_users(id) ON DELETE CASCADE,
+  tenant_contact_id UUID REFERENCES bg_tenants(id) ON DELETE CASCADE,
   start_date DATE NOT NULL,
   end_date DATE,
   is_active BOOLEAN DEFAULT true,
@@ -49,6 +71,11 @@ CREATE TABLE IF NOT EXISTS bg_leases (
   created_at TIMESTAMPTZ DEFAULT now(),
   updated_at TIMESTAMPTZ DEFAULT now()
 );
+
+-- Oppgradering: leigeforhold peikte tidlegare rett på bg_users via tenant_id
+ALTER TABLE bg_leases ADD COLUMN IF NOT EXISTS tenant_contact_id UUID REFERENCES bg_tenants(id) ON DELETE CASCADE;
+DROP POLICY IF EXISTS bg_leases_tenant_read ON bg_leases;
+ALTER TABLE bg_leases DROP COLUMN IF EXISTS tenant_id;
 
 -- Arkiv for avslutta leigeforhold (snapshot av data)
 CREATE TABLE IF NOT EXISTS bg_tenant_history (
@@ -64,29 +91,35 @@ CREATE TABLE IF NOT EXISTS bg_tenant_history (
   created_at TIMESTAMPTZ DEFAULT now()
 );
 
--- FDV-kategoriar (bygningsdeltabell + eigne kategoriar)
+-- FDV-kategoriar. section: leigeforhold | tegningar | bileter er eigne toppnivå-kategoriar,
+-- bygning samlar alle bygningsdelane (og Kontrakt og juridisk) under ein utvidbar "Bygning".
 CREATE TABLE IF NOT EXISTS bg_fdv_categories (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   name TEXT NOT NULL UNIQUE,
   sort_order INT DEFAULT 0
 );
+ALTER TABLE bg_fdv_categories ADD COLUMN IF NOT EXISTS section TEXT NOT NULL DEFAULT 'bygning';
 
-INSERT INTO bg_fdv_categories (name, sort_order) VALUES
-  ('Grunn og fundament', 1),
-  ('Yttervegg', 2),
-  ('Tak', 3),
-  ('Dører og vindauge', 4),
-  ('Innvendige overflater', 5),
-  ('Våtrom', 6),
-  ('Elektro', 7),
-  ('VVS (varme/vann/sanitær)', 8),
-  ('Ventilasjon', 9),
-  ('Løst inventar', 10),
-  ('Utomhus', 11),
-  ('Forsikring', 12),
-  ('Kontrakt og juridisk', 13),
-  ('Anna', 14)
-ON CONFLICT (name) DO NOTHING;
+INSERT INTO bg_fdv_categories (name, section, sort_order) VALUES
+  ('Leigeforhold', 'leigeforhold', 1),
+  ('Tegningar', 'tegningar', 2),
+  ('Bileter', 'bileter', 3),
+  ('Grunn og fundament', 'bygning', 11),
+  ('Yttervegg', 'bygning', 12),
+  ('Tak', 'bygning', 13),
+  ('Dører og vindauge', 'bygning', 14),
+  ('Innvendige overflater', 'bygning', 15),
+  ('Våtrom', 'bygning', 16),
+  ('Elektro', 'bygning', 17),
+  ('VVS (varme/vann/sanitær)', 'bygning', 18),
+  ('Ventilasjon', 'bygning', 19),
+  ('Fast inventar', 'bygning', 20),
+  ('Løst inventar', 'bygning', 21),
+  ('Utomhus', 'bygning', 22),
+  ('Forsikring', 'bygning', 23),
+  ('Kontrakt og juridisk', 'bygning', 24),
+  ('Anna', 'bygning', 25)
+ON CONFLICT (name) DO UPDATE SET section = EXCLUDED.section, sort_order = EXCLUDED.sort_order;
 
 -- FDV-informasjon (dokument/data)
 CREATE TABLE IF NOT EXISTS bg_fdv_items (
@@ -183,6 +216,7 @@ ALTER TABLE bg_projects ENABLE ROW LEVEL SECURITY;
 ALTER TABLE bg_properties ENABLE ROW LEVEL SECURITY;
 ALTER TABLE bg_users ENABLE ROW LEVEL SECURITY;
 ALTER TABLE bg_leases ENABLE ROW LEVEL SECURITY;
+ALTER TABLE bg_tenants ENABLE ROW LEVEL SECURITY;
 ALTER TABLE bg_tenant_history ENABLE ROW LEVEL SECURITY;
 ALTER TABLE bg_fdv_categories ENABLE ROW LEVEL SECURITY;
 ALTER TABLE bg_fdv_items ENABLE ROW LEVEL SECURITY;
@@ -202,10 +236,23 @@ $$ LANGUAGE sql SECURITY DEFINER STABLE;
 -- Hjelpefunksjon: har innlogga brukar aktivt leigeforhold på denne property_id?
 CREATE OR REPLACE FUNCTION bg_has_active_lease(pid UUID) RETURNS BOOLEAN AS $$
   SELECT EXISTS (
-    SELECT 1 FROM bg_leases
-    WHERE property_id = pid AND tenant_id = auth.uid() AND is_active = true
+    SELECT 1 FROM bg_leases l
+    JOIN bg_tenants t ON t.id = l.tenant_contact_id
+    WHERE l.property_id = pid AND l.is_active = true AND t.user_id = auth.uid()
   );
 $$ LANGUAGE sql SECURITY DEFINER STABLE;
+
+-- Koplar leigebuarar (registrert av admin) til innloggingskontoar med same, stadfesta e-post.
+-- Vanleg brukar kan berre kopla seg sjølv; admin kan kopla alle.
+CREATE OR REPLACE FUNCTION bg_link_tenants() RETURNS void AS $$
+  UPDATE bg_tenants t SET user_id = u.id, updated_at = now()
+  FROM auth.users u
+  JOIN bg_users bu ON bu.id = u.id
+  WHERE t.user_id IS NULL
+    AND lower(u.email) = lower(t.email)
+    AND u.email_confirmed_at IS NOT NULL
+    AND (u.id = auth.uid() OR bg_is_admin());
+$$ LANGUAGE sql SECURITY DEFINER SET search_path = public;
 
 -- Enkle policy-mønster: admin har full tilgang overalt.
 -- Leigebuar ser berre data knytt til eiga(ne) aktive leilegheit(er), og berre synlege FDV-postar.
@@ -235,7 +282,16 @@ CREATE POLICY bg_users_self_insert ON bg_users FOR INSERT WITH CHECK (id = auth.
 DROP POLICY IF EXISTS bg_leases_admin_all ON bg_leases;
 CREATE POLICY bg_leases_admin_all ON bg_leases FOR ALL USING (bg_is_admin());
 DROP POLICY IF EXISTS bg_leases_tenant_read ON bg_leases;
-CREATE POLICY bg_leases_tenant_read ON bg_leases FOR SELECT USING (tenant_id = auth.uid() AND is_active = true);
+CREATE POLICY bg_leases_tenant_read ON bg_leases FOR SELECT USING (
+  is_active = true AND EXISTS (
+    SELECT 1 FROM bg_tenants t WHERE t.id = bg_leases.tenant_contact_id AND t.user_id = auth.uid()
+  )
+);
+
+DROP POLICY IF EXISTS bg_tenants_admin_all ON bg_tenants;
+CREATE POLICY bg_tenants_admin_all ON bg_tenants FOR ALL USING (bg_is_admin());
+DROP POLICY IF EXISTS bg_tenants_self_read ON bg_tenants;
+CREATE POLICY bg_tenants_self_read ON bg_tenants FOR SELECT USING (user_id = auth.uid());
 
 DROP POLICY IF EXISTS bg_tenant_history_admin_all ON bg_tenant_history;
 CREATE POLICY bg_tenant_history_admin_all ON bg_tenant_history FOR ALL USING (bg_is_admin());

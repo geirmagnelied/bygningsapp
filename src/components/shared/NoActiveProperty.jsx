@@ -7,9 +7,9 @@ export default function NoActiveProperty() {
   if (isAdmin) {
     return (
       <div className="p-4 text-sm text-gray-500">
-        Ingen bygg registrert enno.{' '}
-        <Link to="/admin/leigebuarar" className="text-brand-600 hover:underline">
-          Opprett eit bygg
+        Ingen leilegheit å vise enno.{' '}
+        <Link to="/admin" className="text-brand-600 hover:underline">
+          Opprett ein eigedom og ei leilegheit
         </Link>{' '}
         for å koma i gang.
       </div>

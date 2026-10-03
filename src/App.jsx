@@ -9,7 +9,7 @@ import DocumentsTab from './components/documents/DocumentsTab'
 import CaseList from './components/cases/CaseList'
 import CaseDetail from './components/cases/CaseDetail'
 import AdminDashboard from './components/admin/AdminDashboard'
-import TenantManagement from './components/admin/TenantManagement'
+import EigedomAdmin from './components/admin/EigedomAdmin'
 import SettingsTab from './components/settings/SettingsTab'
 
 function Gate() {
@@ -33,8 +33,8 @@ function Gate() {
           <Route path="saker" element={<CaseList />} />
           <Route path="saker/:caseId" element={<CaseDetail />} />
           <Route path="innstillingar" element={<SettingsTab />} />
-          <Route path="admin" element={<AdminDashboard />} />
-          <Route path="admin/leigebuarar" element={<TenantManagement />} />
+          <Route path="admin" element={<EigedomAdmin />} />
+          <Route path="admin/oversikt" element={<AdminDashboard />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Route>
       </Routes>
